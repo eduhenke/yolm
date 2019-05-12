@@ -31,9 +31,9 @@ fn login(username: String, password: String) -> Result<User, LoginError> {
         None => return Err(NoUser),
     };
 
-    // Now, setup the authenticator, we require the basic "system-auth" service
+    // Now, setup the authenticator, we require the basic "login" service
     let mut authenticator = 
-        Authenticator::with_password("system-auth").expect("Failed to init PAM client!");
+        Authenticator::with_password("login").expect("Failed to init PAM client!");
 
     authenticator.get_handler().set_credentials(username, password);
 
@@ -41,6 +41,7 @@ fn login(username: String, password: String) -> Result<User, LoginError> {
         return Err(AuthFailed);
     }
 
+    authenticator.close_on_drop = false;
     authenticator
         .open_session()
         .expect("Failed to open a session!");
@@ -62,15 +63,39 @@ fn main() {
 
     let user = login(username, password).expect("Login Failed");
 
+    loop {
+        print!("spawn sway[y,N]: ");
+        io::stdout().flush().expect("Could not print to stdout");
+        let mut opt = String::new();
+        io::stdin().read_line(&mut opt).expect("Could not read from stdin");
+        opt.pop();
+        if opt == "y" {
+            break;
+        }
+    }
+
     // we now try to spawn `/usr/bin/sway` as this user
     // note that setting the uid/gid is likely to fail if this program is not already run as the
     // proper user or as root
-    let error = Command::new("/usr/bin/sway")
+    let sway_call = Command::new("/usr/bin/sway")
+        .env("XDG_RUNTIME_DIR", format!("/run/user/{}", user.uid()))
         .uid(user.uid())
         .gid(user.primary_group_id())
-        .exec();
-    match error.kind() {
-        io::ErrorKind::NotFound => println!("you don't have sway installed"),
-        e => println!("other error {:?}", e)
+        .spawn();
+
+    let _sway_proc = match sway_call {
+        Ok(p) => p,
+        Err(e) => panic!("error on calling sway: {:?}", e)
+    };
+    
+    loop {
+        print!("exit yolm[y,N]: ");
+        io::stdout().flush().expect("Could not print to stdout");
+        let mut opt = String::new();
+        io::stdin().read_line(&mut opt).expect("Could not read from stdin");
+        opt.pop();
+        if opt == "y" {
+            break;
+        }
     }
 }

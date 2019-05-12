@@ -1,0 +1,17 @@
+[Unit]
+Description=yo login manager
+Conflicts=getty@tty1.service
+After=systemd-user-sessions.service getty@tty1.service systemd-vconsole-setup.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/yolm
+#Restart=always
+StandardInput=tty
+StandardOutput=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+
+[Install]
+Alias=display-manager.service
