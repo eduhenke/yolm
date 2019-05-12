@@ -1,0 +1,10 @@
+[package]
+name = "yolm"
+version = "0.1.0"
+authors = ["eduhenke <eduardo_henke@hotmail.com>"]
+edition = "2018"
+
+[dependencies]
+pam = "0.7.0"
+users   = "0.9"
+libc = "0.2"
