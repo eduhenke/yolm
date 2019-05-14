@@ -16,9 +16,9 @@ pub fn login(username: &str, password: &str) -> Result<User, LoginError> {
         None => return Err(NoUser),
     };
 
-    // Now, setup the authenticator, we require the basic "login" service
+    // Now, setup the authenticator, we require the basic "yolm" service
     let mut authenticator =
-        Authenticator::with_password("login").expect("Failed to init PAM client!");
+        Authenticator::with_password("yolm").expect("Failed to init PAM client!");
 
     authenticator
         .get_handler()
