@@ -1,13 +1,10 @@
-use std::os::unix::process::CommandExt;
-use std::process::Command;
-use users::User;
 use cursive::traits::*;
 use cursive::views::{Dialog, EditView, LinearLayout, TextView};
 use cursive::Cursive;
 mod auth;
+mod sway;
 
-// A simple program that requests a login and a password and then spawns /bin/bash as the
-// user who logged in.
+// YoLM - a simple program that requests user's name and password, logins and spawn sway
 //
 // Note that this proto-"sudo" is very insecure and should not be used in any production setup,
 // it is just an example to show how the PAM api works.
@@ -45,8 +42,11 @@ fn main() {
 fn try_login(s: &mut Cursive, username: &str, password: &str) {
     match auth::login(username, password) {
         Ok(user) => {
-            spawn_sway(user);
-            s.add_layer(Dialog::info("Want to login again?"));
+            let msg = match sway::spawn(user) {
+                Ok(_) => "Want to login again?",
+                Err(_) => "Error on spawning sway :(\nAre you sure that sway is in /usr/bin/sway?",
+            };
+            s.add_layer(Dialog::info(msg));
         },
         Err(e) => {
             let msg = match e {
@@ -78,20 +78,4 @@ fn handle_password(s: &mut Cursive, field: &str) {
         }).unwrap().to_string();
         try_login(s, &username, field);
     }
-}
-
-fn spawn_sway(user: User) {
-    // we now try to spawn `/usr/bin/sway` as this user
-    // note that setting the uid/gid is likely to fail if this program is not already run as the
-    // proper user or as root
-    let sway_call = Command::new("/usr/bin/sway")
-        .env("XDG_RUNTIME_DIR", format!("/run/user/{}", user.uid()))
-        .uid(user.uid())
-        .gid(user.primary_group_id())
-        .spawn();
-
-    let _sway_proc = match sway_call {
-        Ok(p) => p,
-        Err(e) => panic!("error on calling sway: {:?}", e),
-    };
 }
