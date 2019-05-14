@@ -1,79 +1,86 @@
-use std::io;
-use std::io::Write;
 use std::os::unix::process::CommandExt;
 use std::process::Command;
-use pam::Authenticator;
 use users::User;
-mod input;
+use cursive::traits::*;
+use cursive::views::{Dialog, EditView, LinearLayout, TextView};
+use cursive::Cursive;
+mod auth;
 
 // A simple program that requests a login and a password and then spawns /bin/bash as the
 // user who logged in.
 //
 // Note that this proto-"sudo" is very insecure and should not be used in any production setup,
 // it is just an example to show how the PAM api works.
-
-#[derive(Debug, Clone)]
-// Define our error types. These may be customized for our error handling cases.
-// Now we will be able to write our own errors, defer to an underlying error
-// implementation, or do something in between.
-enum LoginError {
-    AuthFailed,
-    NoUser,
-}
-
-
-
-fn login(username: String, password: String) -> Result<User, LoginError> {
-    use LoginError::*;
-
-    let user = match users::get_user_by_name(&username) {
-        Some(u) => u,
-        None => return Err(NoUser),
-    };
-
-    // Now, setup the authenticator, we require the basic "login" service
-    let mut authenticator = 
-        Authenticator::with_password("login").expect("Failed to init PAM client!");
-
-    authenticator.get_handler().set_credentials(username, password);
-
-    if let Err(_) = authenticator.authenticate() {
-        return Err(AuthFailed);
-    }
-
-    authenticator.close_on_drop = false;
-    authenticator
-        .open_session()
-        .expect("Failed to open a session!");
-    
-    Ok(user)
-}
-
 fn main() {
-    // First, prompt the user for a login and a password
-    print!("login: ");
-    io::stdout().flush().unwrap();
-    let mut username = String::new();
-    io::stdin().read_line(&mut username).unwrap();
-    username.pop(); // remove the trailing '\n'
-    print!("password: ");
-    io::stdout().flush().unwrap();
-    let password =
-        input::read_password_from_tty().expect("could not read password");
+    let mut siv = Cursive::default();
 
-    let user = login(username, password).expect("Login Failed");
+    let username_input = LinearLayout::horizontal()
+        .child(TextView::new("username: "))
+        .child(
+            EditView::new()
+                .on_submit(handle_username)
+                .with_id("username")
+                .fixed_width(20),
+        );
 
-    loop {
-        print!("spawn sway[y,N]: ");
-        io::stdout().flush().expect("Could not print to stdout");
-        let mut opt = String::new();
-        io::stdin().read_line(&mut opt).expect("Could not read from stdin");
-        opt.pop();
-        if opt == "y" {
-            break;
+    let password_input = LinearLayout::horizontal()
+        .child(TextView::new("password: "))
+        .child(
+            EditView::new()
+                .secret()
+                .on_submit(handle_password)
+                .with_id("password")
+                .fixed_width(20),
+        );
+
+    siv.add_layer(Dialog::around(
+        LinearLayout::vertical()
+            .child(username_input)
+            .child(password_input),
+    ));
+
+    siv.run();
+}
+
+fn try_login(s: &mut Cursive, username: &str, password: &str) {
+    match auth::login(username, password) {
+        Ok(user) => {
+            spawn_sway(user);
+            s.add_layer(Dialog::info("Want to login again?"));
+        },
+        Err(e) => {
+            let msg = match e {
+                auth::LoginError::AuthFailed => "Invalid credentials",
+                auth::LoginError::NoUser => "Non-existing user",
+            };
+            s.add_layer(Dialog::info(msg));
         }
     }
+}
 
+fn handle_username(s: &mut Cursive, field: &str) {
+    if field.is_empty() {
+        s.add_layer(Dialog::info("Please enter the username!"));
+    } else {
+        let password = s.call_on_id("password", |view: &mut EditView| {
+            view.get_content()
+        }).unwrap().to_string();
+        try_login(s, field, &password);
+    }
+}
+
+fn handle_password(s: &mut Cursive, field: &str) {
+    if field.is_empty() {
+        s.add_layer(Dialog::info("Please enter the password!"));
+    } else {
+        let username = s.call_on_id("username", |view: &mut EditView| {
+            view.get_content()
+        }).unwrap().to_string();
+        try_login(s, &username, field);
+    }
+}
+
+fn spawn_sway(user: User) {
     // we now try to spawn `/usr/bin/sway` as this user
     // note that setting the uid/gid is likely to fail if this program is not already run as the
     // proper user or as root
@@ -85,17 +92,6 @@ fn main() {
 
     let _sway_proc = match sway_call {
         Ok(p) => p,
-        Err(e) => panic!("error on calling sway: {:?}", e)
+        Err(e) => panic!("error on calling sway: {:?}", e),
     };
-    
-    loop {
-        print!("exit yolm[y,N]: ");
-        io::stdout().flush().expect("Could not print to stdout");
-        let mut opt = String::new();
-        io::stdin().read_line(&mut opt).expect("Could not read from stdin");
-        opt.pop();
-        if opt == "y" {
-            break;
-        }
-    }
 }
